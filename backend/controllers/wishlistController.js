@@ -10,7 +10,7 @@ const generatePublicLink = () => {
 
 export const createWishlist = async (req, res) => {
   try {
-    const { title, description, isPublic, hideReserverName, eventDate } = req.body;
+    const { title, description, visibility, interests, hideReserverName, eventDate } = req.body;
     const userId = req.userId;
 
     if (!title) {
@@ -21,12 +21,13 @@ export const createWishlist = async (req, res) => {
       userId,
       title,
       description,
-      isPublic,
+      visibility: visibility || 'hidden',
+      interests: interests || [],
       hideReserverName,
       eventDate
     });
 
-    if (isPublic) {
+    if (visibility === 'public') {
       wishlist.publicLink = generatePublicLink();
     }
 
@@ -109,7 +110,10 @@ export const getWishlistById = async (req, res) => {
     const currentUser = await User.findById(userId);
     const isOwner = wishlist.userId._id.toString() === userId;
 
-    if (!isOwner && !wishlist.isPublic) {
+    if (!isOwner && wishlist.visibility !== 'public') {
+      if (wishlist.visibility === 'hidden') {
+         return res.status(403).json({ message: 'Not authorized to view this wishlist' });
+      }
       const circleMember = await Circle.findOne({
         user: wishlist.userId._id,
         status: 'accepted',
@@ -136,7 +140,7 @@ export const getWishlistById = async (req, res) => {
 export const getPublicWishlist = async (req, res) => {
   try {
     const { publicLink } = req.params;
-    const wishlist = await Wishlist.findOne({ publicLink, isPublic: true }).populate('userId', 'name');
+    const wishlist = await Wishlist.findOne({ publicLink, visibility: 'public' }).populate('userId', 'name');
 
     if (!wishlist) {
       return res.status(404).json({ message: 'Wishlist not found' });
@@ -153,7 +157,7 @@ export const getPublicWishlist = async (req, res) => {
 export const updateWishlist = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, isPublic, hideReserverName, eventDate } = req.body;
+    const { title, description, visibility, interests, hideReserverName, eventDate } = req.body;
     const userId = req.userId;
 
     let wishlist = await Wishlist.findById(id);
@@ -167,17 +171,20 @@ export const updateWishlist = async (req, res) => {
     }
 
     wishlist.title = title || wishlist.title;
-    wishlist.description = description || wishlist.description;
+    wishlist.description = description !== undefined ? description : wishlist.description;
     wishlist.hideReserverName = hideReserverName !== undefined ? hideReserverName : wishlist.hideReserverName;
-    wishlist.eventDate = eventDate || wishlist.eventDate;
+    wishlist.eventDate = eventDate !== undefined ? eventDate : wishlist.eventDate;
+    if (interests) {
+      wishlist.interests = interests;
+    }
 
-    if (isPublic && !wishlist.isPublic) {
+    if (visibility === 'public' && wishlist.visibility !== 'public') {
       wishlist.publicLink = generatePublicLink();
     }
-    if (!isPublic && wishlist.isPublic) {
+    if (visibility !== 'public' && wishlist.visibility === 'public') {
       wishlist.publicLink = null;
     }
-    wishlist.isPublic = isPublic !== undefined ? isPublic : wishlist.isPublic;
+    wishlist.visibility = visibility !== undefined ? visibility : wishlist.visibility;
 
     wishlist.updatedAt = Date.now();
 

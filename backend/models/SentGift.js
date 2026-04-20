@@ -11,12 +11,21 @@ const sentGiftSchema = new mongoose.Schema({
     ref: 'Circle',
     required: true
   },
+  receiverUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   name: {
     type: String,
     required: true,
     trim: true
   },
   description: {
+    type: String,
+    trim: true
+  },
+  platform: {
     type: String,
     trim: true
   },

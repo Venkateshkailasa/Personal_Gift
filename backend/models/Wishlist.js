@@ -15,10 +15,15 @@ const wishlistSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  isPublic: {
-    type: Boolean,
-    default: false
+  visibility: {
+    type: String,
+    enum: ['hidden', 'connections', 'public'],
+    default: 'hidden'
   },
+  interests: [{
+    type: String,
+    trim: true
+  }],
   publicLink: {
     type: String,
     unique: true,

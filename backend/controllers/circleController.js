@@ -40,8 +40,6 @@ export const getMyCircle = async (req, res) => {
 export const getUpcomingEvents = async (req, res) => {
   try {
     const today = new Date();
-    const nextMonth = new Date();
-    nextMonth.setMonth(today.getMonth() + 1);
 
     const acceptedFriends = await Circle.find({
       user: req.userId,
@@ -63,7 +61,7 @@ export const getUpcomingEvents = async (req, res) => {
           let nextBirthday = birthdayThisYear;
           if (birthdayThisYear < today) nextBirthday = birthdayNextYear;
 
-          if (nextBirthday >= today && nextBirthday <= nextMonth) {
+          if (nextBirthday >= today) {
             events.push({
               id: person._id,
               name: person.name,
@@ -84,7 +82,7 @@ export const getUpcomingEvents = async (req, res) => {
           let nextAnniversary = anniversaryThisYear;
           if (anniversaryThisYear < today) nextAnniversary = anniversaryNextYear;
 
-          if (nextAnniversary >= today && nextAnniversary <= nextMonth) {
+          if (nextAnniversary >= today) {
             events.push({
               id: person._id,
               name: person.name,
@@ -218,8 +216,7 @@ export const acceptFriendRequest = async (req, res) => {
     const request = await Circle.findOne({
       _id: id,
       user: req.userId,
-      status: 'pending',
-      relationship: 'friend'
+      status: 'pending'
     });
 
     if (!request) {
@@ -236,7 +233,6 @@ export const acceptFriendRequest = async (req, res) => {
     const existingConnection = await Circle.findOne({
       user: request.requester, // Add to requester's circle
       requester: req.userId,   // From current user
-      relationship: 'friend',
       status: 'accepted'
     });
 
@@ -244,7 +240,7 @@ export const acceptFriendRequest = async (req, res) => {
       const mutualConnection = new Circle({
         user: request.requester, // Add to requester's circle
         name: currentUser.name,
-        relationship: 'friend',
+        relationship: request.relationship,
         status: 'accepted',
         requester: req.userId
       });
@@ -254,7 +250,7 @@ export const acceptFriendRequest = async (req, res) => {
     await createNotification(
       request.requester,
       'friend_accept',
-      `${currentUser.name} accepted your friend request`,
+      `${currentUser.name} accepted your request`,
       `You are now connected with ${currentUser.name}.`,
       { from: req.userId }
     );
@@ -277,11 +273,10 @@ export const removeFromCircle = async (req, res) => {
     }
 
     // If this was an accepted friend connection, remove reciprocal entry too
-    if (circle.relationship === 'friend' && circle.status === 'accepted' && circle.requester) {
+    if (circle.status === 'accepted' && circle.requester) {
       await Circle.findOneAndDelete({
         user: circle.requester,
         requester: req.userId,
-        relationship: 'friend',
         status: 'accepted'
       });
     }
@@ -295,13 +290,58 @@ export const removeFromCircle = async (req, res) => {
 // Get notifications for the current user
 export const getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({ user: req.userId })
+    const unreadNotifications = await Notification.find({ user: req.userId, isRead: false })
       .sort({ createdAt: -1 })
       .limit(30);
 
-    res.status(200).json({ notifications });
+    const readNotifications = await Notification.find({ user: req.userId, isRead: true })
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    const unreadCount = await Notification.countDocuments({ user: req.userId, isRead: false });
+
+    res.status(200).json({ 
+      notifications: [...unreadNotifications, ...readNotifications],
+      unreadNotifications,
+      unreadCount
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching notifications', error: error.message });
+  }
+};
+
+// Mark notification as read
+export const markNotificationAsRead = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+
+    const notification = await Notification.findOneAndUpdate(
+      { _id: notificationId, user: req.userId },
+      { isRead: true },
+      { new: true }
+    );
+
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    res.status(200).json({ message: 'Notification marked as read', notification });
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking notification as read', error: error.message });
+  }
+};
+
+// Mark all notifications as read
+export const markAllNotificationsAsRead = async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { user: req.userId, isRead: false },
+      { isRead: true }
+    );
+
+    res.status(200).json({ message: 'All notifications marked as read' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking notifications as read', error: error.message });
   }
 };
 
@@ -320,22 +360,25 @@ export const sendMessage = async (req, res) => {
       return res.status(404).json({ message: 'Recipient not found' });
     }
 
-    const isFriend = await Circle.findOne({
-      user: req.userId,
-      requester: receiverId,
-      relationship: 'friend',
-      status: 'accepted'
+    // Check if there is already an accepted conversation where the current user is involved.
+    // If receiver has previously sent an accepted message to sender, or sender to receiver has an accepted message.
+    const priorDiscussion = await Message.findOne({
+      $or: [
+        { sender: req.userId, receiver: receiverId, status: 'accepted' },
+        { sender: receiverId, receiver: req.userId, status: 'accepted' }
+      ]
     });
 
-    if (!isFriend) {
-      return res.status(403).json({ message: 'You can only message accepted friends' });
-    }
+    const isRequest = !priorDiscussion;
+    const status = isRequest ? 'pending' : 'accepted';
 
     const message = new Message({
       sender: req.userId,
       receiver: receiverId,
       text,
-      replyTo: replyTo || null
+      replyTo: replyTo || null,
+      status,
+      isRequest
     });
     await message.save();
 
@@ -359,14 +402,73 @@ export const getMessages = async (req, res) => {
     const { friendId } = req.params;
     const messages = await Message.find({
       $or: [
-        { sender: req.userId, receiver: friendId },
-        { sender: friendId, receiver: req.userId }
+        { sender: req.userId, receiver: friendId, status: { $ne: 'rejected' } },
+        { sender: friendId, receiver: req.userId, status: { $ne: 'rejected' } }
       ]
     }).populate('replyTo', 'text sender createdAt').sort({ createdAt: 1 });
 
     res.status(200).json({ messages });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching messages', error: error.message });
+  }
+};
+
+// Get Message Requests
+export const getMessageRequests = async (req, res) => {
+  try {
+    // Find messages sent to me that are pending and requests
+    const requests = await Message.find({
+      receiver: req.userId,
+      status: 'pending',
+      isRequest: true
+    }).populate('sender', 'name username').sort({ createdAt: -1 });
+
+    // Group by sender mapping
+    const grouped = {};
+    requests.forEach(msg => {
+      const senderId = msg.sender._id.toString();
+      if (!grouped[senderId]) {
+        grouped[senderId] = {
+          sender: msg.sender,
+          lastMessage: msg,
+          count: 0
+        };
+      }
+      grouped[senderId].count += 1;
+    });
+
+    res.status(200).json({ requests: Object.values(grouped) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching message requests', error: error.message });
+  }
+};
+
+// Accept Message Request
+export const acceptMessageRequest = async (req, res) => {
+  try {
+    const { senderId } = req.params;
+    await Message.updateMany(
+      { sender: senderId, receiver: req.userId, status: 'pending' },
+      { status: 'accepted', isRequest: false }
+    );
+    res.status(200).json({ message: 'Message request accepted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error accepting message request', error: error.message });
+  }
+};
+
+// Reject Message Request
+export const rejectMessageRequest = async (req, res) => {
+  try {
+    const { senderId } = req.params;
+    // Set to rejected so they disappear from requests
+    await Message.updateMany(
+      { sender: senderId, receiver: req.userId, status: 'pending' },
+      { status: 'rejected', isRequest: false }
+    );
+    res.status(200).json({ message: 'Message request rejected' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error rejecting message request', error: error.message });
   }
 };
 
@@ -378,8 +480,7 @@ export const rejectFriendRequest = async (req, res) => {
     const request = await Circle.findOneAndDelete({
       _id: id,
       user: req.userId,
-      status: 'pending',
-      relationship: 'friend'
+      status: 'pending'
     });
 
     if (!request) {
@@ -389,5 +490,87 @@ export const rejectFriendRequest = async (req, res) => {
     res.status(200).json({ message: 'Friend request rejected' });
   } catch (error) {
     res.status(500).json({ message: 'Error rejecting friend request', error: error.message });
+  }
+};
+
+// Get friend profile details for pre-filling forms
+export const getFriendProfile = async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const userId = req.userId;
+
+    // Check if user is connected to this friend
+    const circleMember = await Circle.findOne({
+      $or: [
+        { user: friendId, requester: userId, status: 'accepted' },
+        { user: userId, requester: friendId, status: 'accepted' }
+      ]
+    });
+
+    if (!circleMember) {
+      return res.status(403).json({ message: 'Not connected to this friend' });
+    }
+
+    // Get friend profile
+    const friend = await User.findById(friendId).select('-password');
+
+    if (!friend) {
+      return res.status(404).json({ message: 'Friend not found' });
+    }
+
+    res.status(200).json({
+      friend: {
+        name: friend.name,
+        email: friend.email,
+        dateOfBirth: friend.dateOfBirth,
+        mobileNumber: friend.mobileNumber,
+        maritalStatus: friend.maritalStatus,
+        marriageDate: friend.marriageDate,
+        address: friend.address,
+        username: friend.username
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching friend profile', error: error.message });
+  }
+};
+
+// Get connections for a specific friend profile (inspect feature)
+export const getFriendConnections = async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const userId = req.userId;
+
+    // Check my relationship with this friend
+    const circleMember = await Circle.findOne({
+      $or: [
+        { user: friendId, requester: userId, status: 'accepted' },
+        { user: userId, requester: friendId, status: 'accepted' }
+      ]
+    });
+
+    if (!circleMember) {
+      return res.status(403).json({ message: 'Not connected to this friend' });
+    }
+
+    const relationshipLevel = circleMember.relationship; // 'friend', 'family', 'colleague'
+
+    // Fetch the target friend's circle connections that MATCH the relationship type
+    // If I am their family, I can see their family connections.
+    
+    const friendConnections = await Circle.find({
+      user: friendId,
+      status: 'accepted',
+      relationship: relationshipLevel
+    }).populate('requester', 'name username');
+
+    // Remove the current user from the returned list of connections
+    const filteredConnections = friendConnections.filter(c => 
+      c.requester && c.requester._id.toString() !== userId
+    );
+
+    res.status(200).json({ connections: filteredConnections });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching friend connections', error: error.message });
   }
 };

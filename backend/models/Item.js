@@ -25,7 +25,7 @@ const itemSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['available', 'taken'],
+    enum: ['available', 'reserved', 'ordered', 'delivered'],
     default: 'available'
   },
   reservedBy: {
@@ -39,6 +39,20 @@ const itemSchema = new mongoose.Schema({
   },
   reservedAt: {
     type: Date
+  },
+  orderedAt: {
+    type: Date
+  },
+  deliveredAt: {
+    type: Date
+  },
+  platform: {
+    type: String,
+    trim: true
+  },
+  orderNotes: {
+    type: String,
+    trim: true
   },
   createdAt: {
     type: Date,

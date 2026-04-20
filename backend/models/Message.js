@@ -21,6 +21,15 @@ const messageSchema = new mongoose.Schema({
     ref: 'Message',
     default: null
   },
+  status: {
+    type: String,
+    enum: ['pending', 'accepted', 'rejected'],
+    default: 'accepted'
+  },
+  isRequest: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
