@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { wishlistAPI, itemAPI } from '../api';
 
@@ -14,11 +14,7 @@ export default function PublicWishlistPage() {
   const navigate = useNavigate();
   const { publicLink } = useParams();
 
-  useEffect(() => {
-    fetchWishlist();
-  }, [publicLink]);
-
-  const fetchWishlist = async () => {
+  const fetchWishlist = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -26,13 +22,19 @@ export default function PublicWishlistPage() {
       setWishlist(wishResponse.data.wishlist);
 
       const itemsResponse = await itemAPI.getItems(wishResponse.data.wishlist._id);
-      setItems(itemsResponse.data.items);
+      setItems(itemsResponse.data.items || []);
     } catch (err) {
-      setError('Wishlist not found or is not public');
+      const errorMsg = err.response?.data?.message || err.message || 'Wishlist not found or is not public';
+      console.error('fetchWishlist error:', err);
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
-  };
+  }, [publicLink]);
+
+  useEffect(() => {
+    fetchWishlist();
+  }, [publicLink, fetchWishlist]);
 
   const handleReserveClick = (item) => {
     setSelectedItem(item);
@@ -58,8 +60,8 @@ export default function PublicWishlistPage() {
       setReserverName('');
       setSelectedItem(null);
       alert('Item reserved successfully!');
-    } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to reserve item');
+    } catch {
+      alert('Failed to reserve item');
     } finally {
       setReservingItemId(null);
     }

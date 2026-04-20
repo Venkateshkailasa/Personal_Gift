@@ -9,15 +9,23 @@ import DashboardPage from './pages/DashboardPage';
 import CreateWishlistPage from './pages/CreateWishlistPage';
 import WishlistPage from './pages/WishlistPage';
 import PublicWishlistPage from './pages/PublicWishlistPage';
-import ProfileSetupPage from './pages/ProfileSetupPage';
+import ProfilePage from './pages/ProfilePage';
 import MessagesPage from './pages/MessagesPage';
+import GiftActivityPage from './pages/GiftActivityPage';
+import { Toaster } from 'react-hot-toast';
 import Header from './components/Header';
 import './App.css';
 
 function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true
+      }}
+    >
       <AuthProvider>
+        <Toaster position="top-center" />
         <Header />
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -29,7 +37,15 @@ function App() {
             path="/profile-setup" 
             element={
               <ProtectedRoute>
-                <ProfileSetupPage />
+                <ProfilePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             } 
           />
@@ -75,6 +91,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <MessagesPage />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/gift-activity/:friendId" 
+            element={
+              <ProtectedRoute>
+                <GiftActivityPage />
               </ProtectedRoute>
             } 
           />

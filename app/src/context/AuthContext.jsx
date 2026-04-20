@@ -50,18 +50,18 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.getMe();
       setUser(response.data.user);
-    } catch (error) {
+    } catch {
       logout();
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, logout]);
 
   useEffect(() => {
     if (token && !user) {
       fetchMe();
     }
-  }, [token]);
+  }, [token, fetchMe, user]);
 
   const updateProfileState = useCallback((userData) => {
     setUser(userData);
