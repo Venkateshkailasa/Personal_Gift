@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { itemAPI, circleAPI, giftAPI } from '../api';
+import { ArrowLeft } from 'lucide-react';
 
 export default function GiftActivityPage() {
   const [items, setItems] = useState([]);
@@ -19,17 +20,20 @@ export default function GiftActivityPage() {
     try {
       // First get friend details
       const circleResponse = await circleAPI.getMyCircle();
-      const friendData = circleResponse.data.circles.find(c => c._id === friendId);
+      // Try to find by circle document ID OR by the actual user ID (requester ID)
+      const friendData = circleResponse.data?.circles?.find(c => 
+        c._id === friendId || (c.requester && c.requester._id === friendId)
+      );
       if (!friendData) {
-        setError('Friend not found in your circle');
+        setError('Connection not found in your circle');
         return;
       }
       setFriend(friendData);
 
-      // Fetch both item activities and sent gifts in parallel
+      // Use Circle ID for giftAPI and User ID (if available) for itemAPI
       const [activityResponse, sentGiftsResponse] = await Promise.all([
-        itemAPI.getGiftActivityForFriend(friendId),
-        giftAPI.getSentGiftsForFriend(friendId)
+        itemAPI.getGiftActivityForFriend(friendData.requester?._id || friendData._id),
+        giftAPI.getSentGiftsForFriend(friendData._id)
       ]);
 
       const itemsData = activityResponse.data.items || [];
@@ -83,12 +87,13 @@ export default function GiftActivityPage() {
       setItems(combinedActivities);
       
       // Check if current user is a contributor
-      const isUserContributor = combinedActivities.some(activity => 
-        (activity.type === 'item' && activity.reservedBy?._id === user.id && 
+      const currentUserId = user?._id || user?.id;
+      const isUserContributor = currentUserId && combinedActivities.some(activity => 
+        (activity.type === 'item' && activity.reservedBy?._id === currentUserId && 
          (activity.status === 'ordered' || activity.status === 'delivered')) ||
-        (activity.type === 'sent_gift' && activity.sender?._id === user.id)
+        (activity.type === 'sent_gift' && activity.sender?._id === currentUserId)
       );
-      setIsContributor(isUserContributor);
+      setIsContributor(!!isUserContributor);
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || 'Failed to load gift activity';
       console.error('fetchGiftActivity error:', err);
@@ -96,7 +101,7 @@ export default function GiftActivityPage() {
     } finally {
       setLoading(false);
     }
-  }, [friendId, user.id]);
+  }, [friendId, user?.id]);
 
   useEffect(() => {
     if (!user) {
@@ -166,11 +171,16 @@ export default function GiftActivityPage() {
         .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
       `}</style>
       {/* Header */}
-      <header className="bg-white shadow">
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-indigo-600">Gift Registry</h1>
-          <Link to="/dashboard" className="text-indigo-600 hover:underline">
-            Back to Dashboard
+          <div className="flex items-center gap-3">
+             <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-all btn-hover">
+               <ArrowLeft size={20} />
+             </button>
+             <h1 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Gift Activity</h1>
+          </div>
+          <Link to="/dashboard" className="text-indigo-600 font-bold hover:underline hidden md:block">
+            Dashboard
           </Link>
         </div>
       </header>
@@ -217,7 +227,7 @@ export default function GiftActivityPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {items.map((activity) => (
+              {(items || []).map((activity) => (
                 <div
                   key={activity.id}
                   className="bg-white rounded-lg shadow p-6"

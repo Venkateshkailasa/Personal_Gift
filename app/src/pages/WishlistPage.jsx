@@ -1,3 +1,9 @@
+/**
+ * WishlistPage Component
+ * Displays individual wishlist with items and management capabilities
+ * Allows adding, editing, and deleting wishlist items
+ */
+
 import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
@@ -6,12 +12,14 @@ import toast from 'react-hot-toast';
 import { ExternalLink, Edit2, Trash2, Tag, Gift, Link2, Image as ImageIcon } from 'lucide-react';
 
 export default function WishlistPage() {
-  const [wishlist, setWishlist] = useState(null);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddItemForm, setShowAddItemForm] = useState(false);
-  const [editingItemId, setEditingItemId] = useState(null);
+  // Component state management
+  const [wishlist, setWishlist] = useState(null); // Current wishlist data
+  const [items, setItems] = useState([]); // Items in the wishlist
+  const [loading, setLoading] = useState(true); // Loading state
+  const [showAddItemForm, setShowAddItemForm] = useState(false); // Add item form visibility
+  const [editingItemId, setEditingItemId] = useState(null); // ID of item being edited
 
+  // Form state for adding/editing items
   const [formData, setFormData] = useState({
     name: '',
     productLink: '',
@@ -19,16 +27,23 @@ export default function WishlistPage() {
     description: '',
   });
 
+  // Context and navigation hooks
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id } = useParams(); // Wishlist ID from URL
 
+  /**
+   * Fetches wishlist data and items
+   * Memoized with useCallback to prevent unnecessary re-renders
+   */
   const fetchWishlist = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch wishlist details
       const wishResponse = await wishlistAPI.getWishlist(id);
       setWishlist(wishResponse.data.wishlist);
 
+      // Fetch items in the wishlist
       const itemsResponse = await itemAPI.getItems(id);
       setItems(itemsResponse.data.items || []);
     } catch (err) {
@@ -38,6 +53,7 @@ export default function WishlistPage() {
     }
   }, [id]);
 
+  // Fetch data on component mount and when dependencies change
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -46,6 +62,10 @@ export default function WishlistPage() {
     fetchWishlist();
   }, [user, navigate, id, fetchWishlist]);
 
+  /**
+   * Handles form input changes
+   * Updates form data state with new values
+   */
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     setFormData({
@@ -54,6 +74,11 @@ export default function WishlistPage() {
     });
   };
 
+  /**
+   * Validates if a string is a valid URL
+   * @param {string} urlString - URL to validate
+   * @returns {boolean} True if valid URL, false otherwise
+   */
   const isValidUrl = (urlString) => {
     if (!urlString) return false;
     try {
@@ -63,13 +88,20 @@ export default function WishlistPage() {
     }
   };
 
+  /**
+   * Handles adding new item or updating existing item
+   * Validates URLs before submission
+   */
   const handleAddItem = async (e) => {
     e.preventDefault();
 
+    // Validate product link URL if provided
     if (formData.productLink && !isValidUrl(formData.productLink)) {
       toast.error("Valid Product Link is required if provided.");
       return;
     }
+
+    // Validate image URL if provided
     if (formData.productImage && !isValidUrl(formData.productImage)) {
       toast.error("Valid Image URL is required if provided.");
       return;
@@ -77,12 +109,14 @@ export default function WishlistPage() {
 
     try {
       if (editingItemId) {
+        // Update existing item
         await itemAPI.updateItem(editingItemId, formData);
         toast.success("Item updated successfully");
         setItems(items.map(item =>
           item._id === editingItemId ? { ...item, ...formData } : item
         ));
       } else {
+        // Add new item
         const response = await itemAPI.addItem({
           wishlistId: id,
           ...formData,
@@ -96,6 +130,10 @@ export default function WishlistPage() {
     }
   };
 
+  /**
+   * Handles item deletion with confirmation
+   * @param {string} itemId - ID of item to delete
+   */
   const handleDeleteItem = async (itemId) => {
     if (!window.confirm('Delete this item?')) return;
 
@@ -382,8 +420,8 @@ export default function WishlistPage() {
             <p className="text-gray-500 text-lg">No items added to this wishlist yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {items.map((item) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {(items || []).map((item) => (
               <div
                 key={item._id}
                 className={`group flex flex-col bg-white rounded-2xl shadow-sm hover:shadow-xl border border-gray-100 transition-all duration-300 overflow-hidden ${
@@ -391,9 +429,9 @@ export default function WishlistPage() {
                 }`}
               >
                 {/* Product Image */}
-                <div className="w-full h-48 bg-gray-50 flex items-center justify-center relative p-3 border-b border-gray-100 group-hover:bg-indigo-50/50 transition-colors">
+                <div className="w-full h-48 bg-gray-50 flex items-center justify-center relative p-3 border-b border-gray-100 group-hover:bg-indigo-50/50 transition-colors overflow-hidden">
                    {item.productImage ? (
-                      <div className="w-full h-full bg-contain bg-center bg-no-repeat transition-transform duration-500 group-hover:scale-105" style={{backgroundImage: `url(${item.productImage})`}}></div>
+                      <img src={item.productImage} alt={item.name} onError={(e) => { e.target.onerror = null; e.target.src = 'https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg'; }} className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105" />
                    ) : (
                       <ImageIcon className="text-gray-300 w-16 h-16" />
                    )}
@@ -420,7 +458,7 @@ export default function WishlistPage() {
                   {/* Actions area below */}
                   <div className="mt-auto pt-4 border-t border-gray-100 space-y-3">
                     
-                    {item.productLink && (
+                    {item.productLink ? (
                       <a
                         href={item.productLink}
                         target="_blank"
@@ -429,6 +467,10 @@ export default function WishlistPage() {
                       >
                         <ExternalLink size={16} /> View Product
                       </a>
+                    ) : (
+                      <button disabled className="flex items-center justify-center gap-2 w-full py-2 bg-gray-50 text-gray-400 font-medium rounded-xl text-sm border border-gray-100 opacity-60 cursor-not-allowed">
+                        <ExternalLink size={16} /> View Product
+                      </button>
                     )}
                     
                     {(item.status !== 'available') && (

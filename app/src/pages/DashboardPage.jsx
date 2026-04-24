@@ -1,3 +1,9 @@
+/**
+ * Dashboard Page Component
+ * Main user dashboard showing wishlists, upcoming events, and recent activity
+ * Provides navigation to all major features of the application
+ */
+
 import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
@@ -6,6 +12,7 @@ import CircleSection from '../components/CircleSection';
 import { Gift, Users, Calendar, MessageCircle, Home, LogOut, Activity, Star, Clock, ChevronRight, ArrowRight, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// Featured gift suggestions for inspiration
 const FEATURED_GIFTS = [
   { id: 1, name: 'Minimalist Watch', price: '$120', image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=400', category: 'Accessories' },
   { id: 2, name: 'Ceramic Coffee Set', price: '$85', image: 'https://images.unsplash.com/photo-1497935586351-b67a49e012bf?auto=format&fit=crop&q=80&w=400', category: 'Lifestyle' },
@@ -13,18 +20,21 @@ const FEATURED_GIFTS = [
 ];
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState('overview');
-  
-  // States
-  const [wishlists, setWishlists] = useState([]);
-  const [upcomingEvents, setUpcomingEvents] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [globalLoading, setGlobalLoading] = useState(true);
-  const [filterType, setFilterType] = useState('all');
+  // Component state management
+  const [activeTab, setActiveTab] = useState('overview'); // Current active tab
 
+  // Data states
+  const [wishlists, setWishlists] = useState([]); // User's wishlists
+  const [upcomingEvents, setUpcomingEvents] = useState([]); // Upcoming birthdays/anniversaries
+  const [recentActivity, setRecentActivity] = useState([]); // Recent gift activity
+  const [globalLoading, setGlobalLoading] = useState(true); // Loading state
+  const [filterType, setFilterType] = useState('all'); // Event filter type
+
+  // Context and navigation
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
+  // Fetch dashboard data on component mount
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -33,14 +43,21 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [user, navigate]);
 
+  /**
+   * Fetches all dashboard data from multiple APIs
+   * Loads wishlists, upcoming events, and recent activity in parallel
+   */
   const fetchDashboardData = async () => {
     setGlobalLoading(true);
     try {
+      // Fetch data from multiple endpoints simultaneously
       const [wlRes, evtRes, actRes] = await Promise.all([
-        wishlistAPI.getMyWishlists(),
-        circleAPI.getUpcomingEvents(),
-        giftAPI.getGlobalGiftActivity().catch(() => ({ data: { activity: [] } }))
+        wishlistAPI.getMyWishlists(), // Get user's wishlists
+        circleAPI.getUpcomingEvents(), // Get upcoming events (birthdays/anniversaries)
+        giftAPI.getGlobalGiftActivity().catch(() => ({ data: { activity: [] } })) // Get recent gift activity (with fallback)
       ]);
+
+      // Update state with fetched data
       setWishlists(wlRes.data.wishlists || []);
       setUpcomingEvents(evtRes.data.events || []);
       setRecentActivity(actRes.data?.activity || []);
@@ -52,6 +69,10 @@ export default function DashboardPage() {
     }
   };
 
+  /**
+   * Deletes a wishlist after user confirmation
+   * @param {string} id - Wishlist ID to delete
+   */
   const handleDeleteWishlist = async (id) => {
     if (!window.confirm('Are you sure you want to delete this wishlist?')) return;
     try {
@@ -63,25 +84,49 @@ export default function DashboardPage() {
     }
   };
 
+  /**
+   * Handles user logout
+   * Clears authentication and redirects to login
+   */
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Filters for occasions
+  // Filter upcoming events by relationship type
   const filteredEvents = upcomingEvents.filter(e => {
     if (filterType === 'all') return true;
     return e.relationship === filterType;
   });
 
+  /**
+   * Renders the overview tab content
+   * Shows welcome message, stats, and featured gifts
+   */
   const renderOverviewTab = () => (
     <div className="space-y-10 animate-fade-in">
-      {/* Welcome Hero */}
-      <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl shadow-indigo-200">
-         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -z-10 -mt-20 -mr-20"></div>
-         <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/20 rounded-full blur-2xl -z-10 -mb-10 -ml-10"></div>
-         <h2 className="text-4xl font-extrabold mb-2">Welcome back, {user?.name}!</h2>
-         <p className="text-indigo-100 max-w-xl text-lg">Manage your wishlists, discover gift ideas, and never miss a special occasion within your circle.</p>
+      {/* Welcome Hero Section */}
+      <div className="bg-gradient-to-br from-indigo-700 via-indigo-600 to-purple-700 rounded-[2rem] p-8 md:p-12 text-white relative overflow-hidden shadow-2xl shadow-indigo-200/50">
+         <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -z-10 -mt-32 -mr-32"></div>
+         <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/20 rounded-full blur-2xl -z-10 -mb-20 -ml-20"></div>
+         <div className="flex flex-col md:flex-row items-center gap-8 mb-4">
+            <div
+              className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white/30 backdrop-blur-sm shadow-2xl overflow-hidden shrink-0 transition-transform duration-500 hover:scale-105 cursor-pointer premium-shadow"
+              onClick={() => user?.profileImage && navigate('/profile')}
+            >
+              {user?.profileImage ? (
+                 <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover bg-white" />
+              ) : (
+                 <div className="w-full h-full bg-indigo-500/50 flex items-center justify-center font-black text-4xl uppercase backdrop-blur-md">
+                   {user?.name?.charAt(0)}
+                 </div>
+              )}
+            </div>
+            <div className="text-center md:text-left">
+              <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-2">Welcome, {user?.name?.split(' ')[0] || 'User'}!</h2>
+              <p className="text-indigo-100/80 max-w-xl text-lg font-medium leading-relaxed">Your personal hub for wishlists and meaningful gifting.</p>
+            </div>
+         </div>
          <div className="mt-8 flex gap-4">
             <button onClick={() => setActiveTab('circle')} className="bg-white text-indigo-700 px-6 py-3 rounded-xl font-bold shadow-sm hover:translate-y-[-2px] hover:shadow-md transition-all flex items-center gap-2">
                View Network <ArrowRight size={16}/>
@@ -137,21 +182,36 @@ export default function DashboardPage() {
                </div>
             ) : (
                <div className="divide-y divide-gray-50">
-                  {recentActivity.map(gift => (
+                  {recentActivity
+                    .filter(gift => {
+                      // Strictly exclude gifts related to self (surprises)
+                      const currentUserId = user?._id || user?.id;
+                      if (gift.receiverUser === currentUserId || gift.receiverUser?._id === currentUserId) return false;
+                      return true;
+                    })
+                    .slice(0, 10)
+                    .map(gift => (
                      <div key={gift._id} className="p-5 hover:bg-gray-50 transition-colors flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-700 shadow-sm shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-indigo-500 border border-gray-100 shadow-sm shrink-0 group-hover:scale-105 transition-transform">
                            <Gift size={20}/>
                         </div>
                         <div className="flex-1 min-w-0">
-                           <p className="font-bold text-gray-900 text-sm md:text-base truncate">{gift.name}</p>
-                           <p className="text-sm text-gray-500 truncate flex items-center gap-1">
-                              Ordered by <span className="font-bold text-gray-700">{gift.sender?.name}</span>
-                              {gift.platform && <span className="px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] uppercase ml-2">{gift.platform}</span>}
+                           <p className="font-bold text-gray-900 text-base tracking-tight mb-0.5">
+                             {gift.name} <span className="text-gray-400 font-medium">ordered to</span> <span className="text-indigo-600">{gift.receiverFriendId?.name || 'Friend'}</span>
+                           </p>
+                           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                              Ordered by <span className="text-indigo-600">{gift.sender?.name || 'Someone'}</span>
+                              {gift.platform && (
+                                <>
+                                  <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                  <span>via <span className="text-gray-600">{gift.platform}</span></span>
+                                </>
+                              )}
                            </p>
                         </div>
                         <div className="text-right shrink-0">
-                           <span className="text-xs text-gray-400 font-medium">{new Date(gift.createdAt).toLocaleDateString()}</span>
-                           <div className="mt-1"><span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-lg border border-green-200">Sent</span></div>
+                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{new Date(gift.createdAt).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</p>
+                           <span className="px-2.5 py-1 bg-green-50 text-green-700 text-[10px] font-black rounded-lg border border-green-100 uppercase tracking-tighter">Sent</span>
                         </div>
                      </div>
                   ))}
@@ -183,7 +243,7 @@ export default function DashboardPage() {
           </div>
        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {wishlists.map((wl) => (
+            {(wishlists || []).map((wl) => (
               <div key={wl._id} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col hover:shadow-xl hover:-translate-y-1 transition-all group">
                 <div className="flex justify-between items-start mb-4">
                   <h3 className="text-xl font-bold text-gray-900 truncate">{wl.title}</h3>
@@ -250,7 +310,7 @@ export default function DashboardPage() {
              </div>
           ) : (
              <div className="relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-1 before:bg-gradient-to-b before:from-indigo-100 before:via-purple-100 before:to-transparent">
-               {filteredEvents.map((evt, idx) => (
+               {(filteredEvents || []).map((evt, idx) => (
                  <div key={`${evt.id}-${evt.type}`} className={`relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group mb-12 animate-fade-in`} style={{animationDelay: `${idx*100}ms`}}>
                     {/* Timeline Dot */}
                     <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-indigo-500 text-white shadow-md absolute left-0 md:left-1/2 -translate-x-1/2 shrink-0 z-10 transition-transform group-hover:scale-125">

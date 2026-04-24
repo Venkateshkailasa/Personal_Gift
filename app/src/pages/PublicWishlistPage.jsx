@@ -1,26 +1,42 @@
+/**
+ * PublicWishlistPage Component
+ * Displays public wishlists that can be viewed and reserved by anyone
+ * Allows anonymous users to reserve items without authentication
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { wishlistAPI, itemAPI } from '../api';
+import { ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 export default function PublicWishlistPage() {
-  const [wishlist, setWishlist] = useState(null);
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [reservingItemId, setReservingItemId] = useState(null);
-  const [reserverName, setReserverName] = useState('');
-  const [showReserveModal, setShowReserveModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
-  const navigate = useNavigate();
-  const { publicLink } = useParams();
+  // Component state management
+  const [wishlist, setWishlist] = useState(null); // Public wishlist data
+  const [items, setItems] = useState([]); // Items in the wishlist
+  const [loading, setLoading] = useState(false); // Loading state
+  const [error, setError] = useState(''); // Error message
+  const [reservingItemId, setReservingItemId] = useState(null); // ID of item being reserved
+  const [reserverName, setReserverName] = useState(''); // Name of person reserving item
+  const [showReserveModal, setShowReserveModal] = useState(false); // Reserve modal visibility
+  const [selectedItem, setSelectedItem] = useState(null); // Currently selected item for reservation
 
+  // Navigation and URL parameters
+  const navigate = useNavigate();
+  const { publicLink } = useParams(); // Public link ID from URL
+
+  /**
+   * Fetches public wishlist data and items
+   * Memoized with useCallback to prevent unnecessary re-renders
+   */
   const fetchWishlist = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      // Fetch public wishlist by link
       const wishResponse = await wishlistAPI.getPublicWishlist(publicLink);
       setWishlist(wishResponse.data.wishlist);
 
+      // Fetch items for the wishlist
       const itemsResponse = await itemAPI.getItems(wishResponse.data.wishlist._id);
       setItems(itemsResponse.data.items || []);
     } catch (err) {
@@ -32,15 +48,25 @@ export default function PublicWishlistPage() {
     }
   }, [publicLink]);
 
+  // Fetch data on component mount
   useEffect(() => {
     fetchWishlist();
   }, [publicLink, fetchWishlist]);
 
+  /**
+   * Handles reserve button click
+   * Opens reservation modal for the selected item
+   * @param {Object} item - Item to reserve
+   */
   const handleReserveClick = (item) => {
     setSelectedItem(item);
     setShowReserveModal(true);
   };
 
+  /**
+   * Handles item reservation submission
+   * Reserves item with provided name
+   */
   const handleReserveItem = async (e) => {
     e.preventDefault();
     if (!reserverName.trim()) {
@@ -50,12 +76,17 @@ export default function PublicWishlistPage() {
 
     setReservingItemId(selectedItem._id);
     try {
-      const response = await itemAPI.reserveItem(selectedItem._id, { 
-        reserverName: reserverName.trim() 
+      // Reserve the item
+      const response = await itemAPI.reserveItem(selectedItem._id, {
+        reserverName: reserverName.trim()
       });
+
+      // Update items list with reserved item
       setItems(items.map(item =>
         item._id === selectedItem._id ? response.data.item : item
       ));
+
+      // Reset modal state
       setShowReserveModal(false);
       setReserverName('');
       setSelectedItem(null);
@@ -67,6 +98,7 @@ export default function PublicWishlistPage() {
     }
   };
 
+  // Loading state UI
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
@@ -75,6 +107,7 @@ export default function PublicWishlistPage() {
     );
   }
 
+  // Error state UI
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
@@ -91,6 +124,7 @@ export default function PublicWishlistPage() {
     );
   }
 
+  // No wishlist found UI
   if (!wishlist) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -158,7 +192,7 @@ export default function PublicWishlistPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {items.map((item) => (
+            {(items || []).map((item) => (
               <div
                 key={item._id}
                 className={`rounded-lg shadow-md overflow-hidden transition ${
@@ -167,6 +201,14 @@ export default function PublicWishlistPage() {
                     : 'bg-white hover:shadow-lg'
                 }`}
               >
+                {/* Product Image */}
+                <div className="w-full h-48 bg-gray-50 flex items-center justify-center relative p-3 border-b border-gray-100 transition-colors overflow-hidden">
+                   {item.productImage ? (
+                      <img src={item.productImage} alt={item.name} onError={(e) => { e.target.onerror = null; e.target.src = 'https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg'; }} className="w-full h-full object-contain transition-transform duration-500 hover:scale-105" />
+                   ) : (
+                      <ImageIcon className="text-gray-300 w-16 h-16" />
+                   )}
+                </div>
                 <div className="p-6">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="text-xl font-bold text-gray-800 flex-1 pr-3">
@@ -200,9 +242,9 @@ export default function PublicWishlistPage() {
                       href={item.productLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-block text-indigo-600 hover:text-indigo-800 font-semibold text-sm mb-4"
+                      className="flex items-center justify-center gap-2 w-full mb-4 py-2 bg-gray-50 hover:bg-indigo-50 text-indigo-600 font-medium rounded-xl transition-colors text-sm border border-gray-100"
                     >
-                      View Product →
+                      <ExternalLink size={16} /> View/Purchase Item
                     </a>
                   )}
 

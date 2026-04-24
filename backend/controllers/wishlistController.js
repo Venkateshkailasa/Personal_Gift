@@ -1,36 +1,54 @@
+/**
+ * Wishlist Controller
+ * Handles wishlist creation, management, and sharing functionality
+ */
+
 import Wishlist from '../models/Wishlist.js';
 import Item from '../models/Item.js';
 import Circle from '../models/Circle.js';
 import User from '../models/User.js';
 import crypto from 'crypto';
 
+/**
+ * Generate a unique public link for wishlist sharing
+ * @returns {string} Random 32-character hex string
+ */
 const generatePublicLink = () => {
   return crypto.randomBytes(16).toString('hex');
 };
 
+/**
+ * Create a new wishlist
+ * Handles wishlist creation with privacy settings and public link generation
+ */
 export const createWishlist = async (req, res) => {
   try {
+    // Extract wishlist data from request
     const { title, description, visibility, interests, hideReserverName, eventDate } = req.body;
     const userId = req.userId;
 
+    // Validate required fields
     if (!title) {
       return res.status(400).json({ message: 'Wishlist title is required' });
     }
 
+    // Create new wishlist instance
     let wishlist = new Wishlist({
       userId,
       title,
       description,
-      visibility: visibility || 'hidden',
+      visibility: visibility || 'hidden', // hidden, friends_only, public
       interests: interests || [],
-      hideReserverName,
-      eventDate
+      hideReserverName, // Hide who reserved items
+      eventDate // Optional event date for the wishlist
     });
 
+    // Generate public link if wishlist is public
     if (visibility === 'public') {
       wishlist.publicLink = generatePublicLink();
     }
 
+    // Save wishlist to database
     await wishlist.save();
 
     res.status(201).json({
@@ -42,9 +60,15 @@ export const createWishlist = async (req, res) => {
   }
 };
 
+/**
+ * Get all wishlists for the authenticated user
+ * Returns user's own wishlists sorted by creation date
+ */
 export const getMyWishlists = async (req, res) => {
   try {
     const userId = req.userId;
+
+    // Find all wishlists belonging to user
     const wishlists = await Wishlist.find({ userId }).sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -55,16 +79,19 @@ export const getMyWishlists = async (req, res) => {
   }
 };
 
+/**
+ * Get wishlists of a friend
+ * Only accessible if users are connected in circle
+ */
 export const getFriendWishlists = async (req, res) => {
   try {
     const { friendId } = req.params;
     const userId = req.userId;
 
-    // Check if the current user is friends with the friendId
+    // Verify friendship/connection exists
     const circleMember = await Circle.findOne({
       user: friendId,
       status: 'accepted',
-      relationship: 'friend',
       requester: userId
     });
 
@@ -72,8 +99,8 @@ export const getFriendWishlists = async (req, res) => {
       return res.status(403).json({ message: 'You can only view wishlists of your accepted friends' });
     }
 
-    // Get friend's wishlists that are visible to friends (not necessarily public)
-    const wishlists = await Wishlist.find({ 
+    // Get friend's wishlists (currently shows all, could be made more granular)
+    const wishlists = await Wishlist.find({
       userId: friendId,
       // For now, we'll show all wishlists to friends, but you could add more granular privacy
     }).sort({ createdAt: -1 });
@@ -97,6 +124,10 @@ export const getFriendWishlists = async (req, res) => {
   }
 };
 
+/**
+ * Get a specific wishlist by ID
+ * Includes ownership and permission checks
+ */
 export const getWishlistById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -117,7 +148,7 @@ export const getWishlistById = async (req, res) => {
       const circleMember = await Circle.findOne({
         user: wishlist.userId._id,
         status: 'accepted',
-        relationship: { $in: ['friend', 'family'] },
+        relationship: { $in: ['friend', 'family', 'colleague'] },
         $or: [
           { requester: userId },
           { email: currentUser?.email }

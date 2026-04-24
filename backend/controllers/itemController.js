@@ -1,36 +1,50 @@
+/**
+ * Item Controller
+ * Handles wishlist item operations including CRUD and reservation management
+ */
+
 import Item from '../models/Item.js';
 import Wishlist from '../models/Wishlist.js';
 import User from '../models/User.js';
 import Circle from '../models/Circle.js';
 
+/**
+ * Add a new item to a wishlist
+ * Validates ownership and creates item with default available status
+ */
 export const addItem = async (req, res) => {
   try {
+    // Extract item data from request
     const { wishlistId, name, productLink, description, productImage } = req.body;
     const userId = req.userId;
 
+    // Validate required fields
     if (!wishlistId || !name) {
       return res.status(400).json({ message: 'Wishlist ID and item name are required' });
     }
 
+    // Verify wishlist exists
     const wishlist = await Wishlist.findById(wishlistId);
-
     if (!wishlist) {
       return res.status(404).json({ message: 'Wishlist not found' });
     }
 
+    // Check if user owns the wishlist
     if (wishlist.userId.toString() !== userId) {
       return res.status(403).json({ message: 'Not authorized to add items to this wishlist' });
     }
 
+    // Create new item
     const item = new Item({
       wishlistId,
       name,
       productLink,
       productImage,
       description,
-      status: 'available'
+      status: 'available' // Default status
     });
 
+    // Save item to database
     await item.save();
 
     res.status(201).json({
@@ -42,20 +56,29 @@ export const addItem = async (req, res) => {
   }
 };
 
+/**
+ * Get all items for a specific wishlist
+ * Includes permission checks and privacy filtering
+ */
 export const getItemsByWishlist = async (req, res) => {
   try {
     const { wishlistId } = req.params;
     const userId = req.userId;
 
+    // Verify wishlist exists
     const wishlist = await Wishlist.findById(wishlistId);
     if (!wishlist) {
       return res.status(404).json({ message: 'Wishlist not found' });
     }
 
+    // Get current user details
     const currentUser = await User.findById(userId);
     const isOwner = wishlist.userId.toString() === userId;
+
+    // Check viewing permissions
     let allowed = isOwner || wishlist.isPublic;
 
+    // If not owner and not public, check if user is a friend/family member
     if (!allowed) {
       const circleMember = await Circle.findOne({
         user: wishlist.userId,
@@ -70,17 +93,20 @@ export const getItemsByWishlist = async (req, res) => {
       allowed = !!circleMember;
     }
 
+    // Deny access if not authorized
     if (!allowed) {
       return res.status(403).json({ message: 'Not authorized to view items for this wishlist' });
     }
 
+    // Get items with reservation details
     const items = await Item.find({ wishlistId })
       .populate('reservedBy', 'name email')
       .sort({ createdAt: -1 });
 
+    // Filter response based on ownership and privacy settings
     const responseItems = items.map((item) => {
       if (!isOwner) {
-        // For non-owners, hide reservation details if the wishlist has hideReserverName enabled
+        // For non-owners, hide reservation details if privacy is enabled
         const hidden = item.toObject();
         if (wishlist.hideReserverName) {
           hidden.status = 'available';

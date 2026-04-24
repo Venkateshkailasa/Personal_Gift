@@ -1,8 +1,21 @@
+/**
+ * Circle Controller
+ * Handles social connections, friend requests, and relationship management
+ */
+
 import Circle from '../models/Circle.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import Message from '../models/Message.js';
 
+/**
+ * Helper function to create notifications
+ * @param {string} userId - User to receive notification
+ * @param {string} type - Notification type
+ * @param {string} title - Notification title
+ * @param {string} message - Notification message
+ * @param {Object} meta - Additional metadata
+ */
 const createNotification = async (userId, type, title, message, meta = {}) => {
   const notification = new Notification({
     user: userId,
@@ -14,14 +27,22 @@ const createNotification = async (userId, type, title, message, meta = {}) => {
   await notification.save();
 };
 
+/**
+ * Get user's social circle (friends and family)
+ * Returns all accepted and pending connections
+ */
 export const getMyCircle = async (req, res) => {
   try {
+    // Find all circle connections for the user
     const circles = await Circle.find({ user: req.userId })
-      .populate('requester', 'username dateOfBirth marriageDate')
+      .populate('requester', 'username dateOfBirth marriageDate profileImage')
       .sort({ name: 1 });
-      
+
+    // Map and enhance circle data with friend details
     const mappedCircles = circles.map(circle => {
       const circleObj = circle.toObject();
+
+      // Add birthday/anniversary info for accepted friends
       if (circleObj.requester && circleObj.status === 'accepted') {
         circleObj.birthday = circleObj.requester.dateOfBirth;
         circleObj.anniversary = circleObj.requester.marriageDate;
@@ -36,23 +57,28 @@ export const getMyCircle = async (req, res) => {
   }
 };
 
-// Get upcoming birthdays and important dates
+/**
+ * Get upcoming birthdays and anniversaries for user's circle
+ * Calculates next occurrence dates and days until events
+ */
 export const getUpcomingEvents = async (req, res) => {
   try {
     const today = new Date();
 
+    // Get all accepted friends with their details
     const acceptedFriends = await Circle.find({
       user: req.userId,
       status: 'accepted'
-    }).populate('requester', 'name dateOfBirth marriageDate');
+    }).populate('requester', 'name dateOfBirth marriageDate profileImage');
 
     const events = [];
 
+    // Process each friend for upcoming events
     acceptedFriends.forEach(person => {
       if (person.requester) {
         const friendDetails = person.requester;
-        
-        // Process Birthdays
+
+        // Calculate next birthday
         if (friendDetails.dateOfBirth) {
           const bday = new Date(friendDetails.dateOfBirth);
           const birthdayThisYear = new Date(today.getFullYear(), bday.getMonth(), bday.getDate());
@@ -61,6 +87,7 @@ export const getUpcomingEvents = async (req, res) => {
           let nextBirthday = birthdayThisYear;
           if (birthdayThisYear < today) nextBirthday = birthdayNextYear;
 
+          // Add to events if within reasonable timeframe
           if (nextBirthday >= today) {
             events.push({
               id: person._id,
@@ -73,7 +100,7 @@ export const getUpcomingEvents = async (req, res) => {
           }
         }
 
-        // Process Anniversaries
+        // Calculate next anniversary
         if (friendDetails.marriageDate) {
           const anniv = new Date(friendDetails.marriageDate);
           const anniversaryThisYear = new Date(today.getFullYear(), anniv.getMonth(), anniv.getDate());
@@ -82,6 +109,7 @@ export const getUpcomingEvents = async (req, res) => {
           let nextAnniversary = anniversaryThisYear;
           if (anniversaryThisYear < today) nextAnniversary = anniversaryNextYear;
 
+          // Add to events if within reasonable timeframe
           if (nextAnniversary >= today) {
             events.push({
               id: person._id,
@@ -96,6 +124,7 @@ export const getUpcomingEvents = async (req, res) => {
       }
     });
 
+    // Sort events by soonest first
     events.sort((a, b) => a.daysUntil - b.daysUntil);
     res.status(200).json({ events });
   } catch (error) {
@@ -122,6 +151,10 @@ export const addToCircle = async (req, res) => {
 
     if (existingUser._id.toString() === req.userId) {
       return res.status(400).json({ message: 'You cannot add yourself as a friend' });
+    }
+
+    if (existingUser.role === 'admin') {
+      return res.status(403).json({ message: 'You cannot add an administrator to your circle' });
     }
 
     const existingRequest = await Circle.findOne({
@@ -191,13 +224,13 @@ export const getFriendRequests = async (req, res) => {
     const receivedRequests = await Circle.find({
       user: req.userId,
       status: 'pending'
-    }).populate('requester', 'name username');
+    }).populate('requester', 'name username profileImage');
 
     // Get requests I sent
     const sentRequests = await Circle.find({
       requester: req.userId,
       status: 'pending'
-    }).populate('user', 'name username');
+    }).populate('user', 'name username profileImage');
 
     res.status(200).json({
       received: receivedRequests,
@@ -521,6 +554,7 @@ export const getFriendProfile = async (req, res) => {
     res.status(200).json({
       friend: {
         name: friend.name,
+        profileImage: friend.profileImage,
         email: friend.email,
         dateOfBirth: friend.dateOfBirth,
         mobileNumber: friend.mobileNumber,
@@ -562,7 +596,7 @@ export const getFriendConnections = async (req, res) => {
       user: friendId,
       status: 'accepted',
       relationship: relationshipLevel
-    }).populate('requester', 'name username');
+    }).populate('requester', 'name username profileImage');
 
     // Remove the current user from the returned list of connections
     const filteredConnections = friendConnections.filter(c => 
@@ -572,5 +606,39 @@ export const getFriendConnections = async (req, res) => {
     res.status(200).json({ connections: filteredConnections });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching friend connections', error: error.message });
+  }
+};
+
+// Unsend / Delete Message
+export const deleteMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+    if (message.sender.toString() !== req.userId) {
+      return res.status(403).json({ message: 'You can only unsend your own messages' });
+    }
+    await Message.findByIdAndDelete(messageId);
+    res.status(200).json({ message: 'Message deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting message', error: error.message });
+  }
+};
+
+// Clear Chat
+export const clearChat = async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    await Message.deleteMany({
+      $or: [
+        { sender: req.userId, receiver: friendId },
+        { sender: friendId, receiver: req.userId }
+      ]
+    });
+    res.status(200).json({ message: 'Chat cleared successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error clearing chat', error: error.message });
   }
 };

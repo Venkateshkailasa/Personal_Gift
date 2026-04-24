@@ -1,27 +1,47 @@
+/**
+ * CreateWishlistPage Component
+ * Form for creating new wishlists or editing existing ones
+ * Handles wishlist metadata, visibility settings, and bulk item addition
+ */
+
 import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { wishlistAPI } from '../api';
+import { wishlistAPI, itemAPI } from '../api';
 import toast from 'react-hot-toast';
-import { X, Tag, Lock, Globe, Users } from 'lucide-react';
+import { X, Tag, Lock, Globe, Users, PackagePlus, Link2, Image as ImageIconLucide, Trash2 } from 'lucide-react';
 
 export default function CreateWishlistPage() {
+  // Main form data state
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    visibility: 'hidden',
-    hideReserverName: false,
-    eventDate: '',
-    interests: []
+    visibility: 'hidden', // hidden, friends_only, public
+    hideReserverName: false, // Hide who reserved items
+    eventDate: '', // Optional event date
+    interests: [] // Tags/interests for the wishlist
   });
+
+  // Interest input state
   const [interestInput, setInterestInput] = useState('');
-  
+
+  // Products to add to wishlist
+  const [products, setProducts] = useState([]);
+  const [newProduct, setNewProduct] = useState({ name: '', productLink: '', productImage: '', description: '' });
+
+  // UI state
   const [loading, setLoading] = useState(false);
+
+  // Context and navigation hooks
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const { id } = useParams();
-  const isEditing = !!id;
+  const { id } = useParams(); // Wishlist ID for editing (optional)
+  const isEditing = !!id; // Determine if we're editing or creating
 
+  /**
+   * Fetches existing wishlist data for editing
+   * Memoized with useCallback to prevent unnecessary re-renders
+   */
   const fetchWishlist = useCallback(async () => {
     try {
       const response = await wishlistAPI.getWishlist(id);
@@ -29,7 +49,7 @@ export default function CreateWishlistPage() {
       setFormData({
         title: wishlist.title,
         description: wishlist.description || '',
-        visibility: wishlist.visibility || (wishlist.isPublic ? 'public' : 'hidden'), // backwards compat
+        visibility: wishlist.visibility || (wishlist.isPublic ? 'public' : 'hidden'), // backwards compatibility
         hideReserverName: wishlist.hideReserverName,
         eventDate: wishlist.eventDate?.split('T')[0] || '',
         interests: wishlist.interests || []
@@ -39,6 +59,7 @@ export default function CreateWishlistPage() {
     }
   }, [id]);
 
+  // Fetch data on component mount if editing
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -47,6 +68,10 @@ export default function CreateWishlistPage() {
     if (isEditing) fetchWishlist();
   }, [user, navigate, id, fetchWishlist, isEditing]);
 
+  /**
+   * Handles form input changes
+   * Supports text inputs, checkboxes, and other input types
+   */
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData({
@@ -55,6 +80,10 @@ export default function CreateWishlistPage() {
     });
   };
 
+  /**
+   * Adds a new interest tag to the wishlist
+   * Prevents duplicates and empty tags
+   */
   const handleAddInterest = (e) => {
     e.preventDefault();
     if (interestInput.trim() && !formData.interests.includes(interestInput.trim())) {
@@ -66,6 +95,10 @@ export default function CreateWishlistPage() {
     }
   };
 
+  /**
+   * Removes an interest tag from the wishlist
+   * @param {string} tag - Tag to remove
+   */
   const removeInterest = (tag) => {
     setFormData({
       ...formData,
@@ -73,19 +106,51 @@ export default function CreateWishlistPage() {
     });
   };
 
+  /**
+   * Adds a new product to the products list
+   * Validates that product name is provided
+   */
+  const handleAddProduct = () => {
+    if (!newProduct.name.trim()) {
+      toast.error('Product name is required');
+      return;
+    }
+    setProducts([...products, { ...newProduct }]);
+    setNewProduct({ name: '', productLink: '', productImage: '', description: '' });
+  };
+
+  /**
+   * Removes a product from the products list
+   * @param {number} idx - Index of product to remove
+   */
+  const removeProduct = (idx) => {
+    setProducts(products.filter((_, i) => i !== idx));
+  };
+
+  /**
+   * Handles form submission for creating or updating wishlist
+   * Creates/updates wishlist and adds any products
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
       if (isEditing) {
+        // Update existing wishlist
         await wishlistAPI.updateWishlist(id, formData);
         toast.success('Wishlist updated!');
         navigate(`/wishlist/${id}`);
       } else {
         const response = await wishlistAPI.createWishlist(formData);
+        const newWishlistId = response.data.wishlist._id;
+        
+        if (products.length > 0) {
+          await Promise.all(products.map(p => itemAPI.addItem({ ...p, wishlistId: newWishlistId })));
+        }
+
         toast.success('Wishlist created!');
-        navigate(`/wishlist/${response.data.wishlist._id}`);
+        navigate(`/wishlist/${newWishlistId}`);
       }
     } catch (_err) {
       toast.error(_err?.response?.data?.message || 'Failed to save wishlist');
@@ -182,6 +247,92 @@ export default function CreateWishlistPage() {
             )}
           </div>
 
+          {/* Add Products Section */}
+          {!isEditing && (
+            <div className="space-y-6 pt-8 border-t border-gray-200">
+              <div className="flex items-center gap-2 mb-2">
+                <PackagePlus className="text-indigo-600" size={24} />
+                <h3 className="text-xl font-bold text-gray-800">Add Products to Wishlist</h3>
+              </div>
+              
+              <div className="bg-indigo-50/50 p-6 rounded-xl border border-indigo-100 space-y-4">
+                <div>
+                  <label className="block text-gray-700 font-bold mb-2">Product Name *</label>
+                  <input
+                    type="text"
+                    value={newProduct.name}
+                    onChange={e => setNewProduct({...newProduct, name: e.target.value})}
+                    placeholder="e.g., Sony Headphones"
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-2 flex items-center gap-2"><Link2 size={16}/> Product Link</label>
+                    <input
+                      type="url"
+                      value={newProduct.productLink}
+                      onChange={e => setNewProduct({...newProduct, productLink: e.target.value})}
+                      placeholder="https://amazon.com/..."
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-2 flex items-center gap-2"><ImageIconLucide size={16}/> Image URL</label>
+                    <input
+                      type="url"
+                      value={newProduct.productImage}
+                      onChange={e => setNewProduct({...newProduct, productImage: e.target.value})}
+                      placeholder="https://..."
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-bold mb-2">Description</label>
+                  <textarea
+                    value={newProduct.description}
+                    onChange={e => setNewProduct({...newProduct, description: e.target.value})}
+                    rows="2"
+                    placeholder="Any specifics, color, size?"
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddProduct}
+                  className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold py-3 rounded-xl transition-colors border border-indigo-200"
+                >
+                  + Add Product to List
+                </button>
+              </div>
+
+              {products.length > 0 && (
+                <div className="space-y-3">
+                  <p className="font-bold text-gray-700 text-sm">Products Added ({products.length}):</p>
+                  {products.map((prod, idx) => (
+                    <div key={idx} className="flex gap-4 p-4 bg-white border border-gray-200 rounded-xl items-center shadow-sm">
+                      <div className="w-16 h-16 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-100 overflow-hidden shrink-0">
+                         {prod.productImage ? (
+                            <img src={prod.productImage} alt={prod.name} className="w-full h-full object-cover" />
+                         ) : (
+                            <ImageIconLucide className="text-gray-300" size={24}/>
+                         )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-gray-800 truncate">{prod.name}</h4>
+                        {prod.productLink && <a href={prod.productLink} target="_blank" rel="noopener noreferrer" className="text-indigo-500 text-xs font-semibold hover:underline flex items-center gap-1"><Link2 size={12}/> Link</a>}
+                      </div>
+                      <button type="button" onClick={() => removeProduct(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 size={18}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Visibility & Privacy */}
           <div className="space-y-4 border-t border-gray-200 pt-8">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Privacy & Visibility</h3>
@@ -239,8 +390,8 @@ export default function CreateWishlistPage() {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/dashboard')}
-              className="px-8 py-4 border-2 border-gray-200 bg-white text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all"
+              onClick={() => navigate(-1)}
+              className="px-8 py-4 border-2 border-gray-200 bg-white text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all font-bold premium-shadow-hover"
             >
               Cancel
             </button>
