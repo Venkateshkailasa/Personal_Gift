@@ -141,12 +141,16 @@ export default function ProfilePage() {
   const handleDeleteAccount = async () => {
     if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
       try {
+        setLoading(true);
         await authAPI.deleteProfile();
         toast.success('Account deleted successfully');
         logout();
         navigate('/login');
       } catch (err) {
         toast.error('Failed to delete account');
+        console.error('Delete error:', err);
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -264,7 +268,12 @@ export default function ProfilePage() {
                     <p className="text-sm text-gray-600 mt-1">Permanently delete your account and all associated data.</p>
                   </div>
                   <button
-                    onClick={handleDeleteAccount}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteAccount();
+                    }}
                     className="w-full md:w-auto px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-200 btn-hover flex items-center justify-center gap-2"
                   >
                     <Trash2 size={18} /> Delete My Account
@@ -479,15 +488,17 @@ export default function ProfilePage() {
               Cancel
             </button>
             
-            {user?.profileComplete && (
-               <button
-                 type="button"
-                 onClick={handleDeleteAccount}
-                 className="w-full md:w-auto px-6 py-3 text-red-500 hover:text-red-700 font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
-               >
-                 <Trash2 size={18}/> Delete Account
-               </button>
-            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteAccount();
+              }}
+              className="w-full md:w-auto px-6 py-3 text-red-500 hover:text-red-700 font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <Trash2 size={18}/> Delete Account
+            </button>
           </div>
         </form>
       </div>

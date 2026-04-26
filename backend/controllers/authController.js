@@ -219,12 +219,18 @@ export const updateProfile = async (req, res) => {
     // Extract profile update data
     const { name, bio, profileImage, mobileNumber, dateOfBirth, maritalStatus, marriageDate, address } = req.body;
 
+    // Find the user to update
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     // Update user fields if provided
     if (name) user.name = name;
 
     // Handle profile image upload/update
-    if (profileImage !== undefined) {
-      if (profileImage.startsWith('data:image')) {
+    if (profileImage !== undefined && profileImage !== '') {
+      if (typeof profileImage === 'string' && profileImage.startsWith('data:image')) {
         // Handle base64 image upload
         if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
           // Configure Cloudinary for image upload
@@ -252,6 +258,9 @@ export const updateProfile = async (req, res) => {
         // Direct URL provided
         user.profileImage = profileImage;
       }
+    } else if (profileImage === '') {
+      // Clear profile image if explicitly set to empty string
+      user.profileImage = '';
     }
 
     // Update other profile fields
@@ -260,7 +269,12 @@ export const updateProfile = async (req, res) => {
     if (dateOfBirth) user.dateOfBirth = dateOfBirth;
     if (maritalStatus) user.maritalStatus = maritalStatus;
     if (marriageDate) user.marriageDate = marriageDate;
-    if (address) user.address = address;
+    if (address) {
+      user.address = {
+        ...user.address,
+        ...address
+      };
+    }
 
     // Save updated user
     await user.save();
@@ -296,39 +310,53 @@ export const updateProfile = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const userId = req.userId;
+    console.log(`Starting account deletion for user: ${userId}`);
 
-    // Delete user account
-    await User.findByIdAndDelete(userId);
-
-    // Delete all circle connections (friends/family relationships)
-    await Circle.deleteMany({ $or: [{ user: userId }, { requester: userId }] });
-
-    // Find all user's wishlists
+    // Delete all items from user's wishlists first (to be safe with nested relationships)
     const userWishlists = await Wishlist.find({ userId });
     const wishlistIds = userWishlists.map(w => w._id);
+    
+    const itemDeleteResult = await Item.deleteMany({ wishlistId: { $in: wishlistIds } });
+    console.log(`Deleted ${itemDeleteResult.deletedCount} items`);
 
     // Delete all user's wishlists
-    await Wishlist.deleteMany({ userId });
+    const wishlistDeleteResult = await Wishlist.deleteMany({ userId });
+    console.log(`Deleted ${wishlistDeleteResult.deletedCount} wishlists`);
 
-    // Delete all items from user's wishlists
-    await Item.deleteMany({ wishlistId: { $in: wishlistIds } });
+    // Delete all circle connections (friends/family relationships)
+    const circleDeleteResult = await Circle.deleteMany({ $or: [{ user: userId }, { requester: userId }] });
+    console.log(`Deleted ${circleDeleteResult.deletedCount} circle connections`);
+
     // Delete all sent gifts records
-    await SentGift.deleteMany({ $or: [{ sender: userId }, { receiverUser: userId }] });
+    const giftDeleteResult = await SentGift.deleteMany({ $or: [{ sender: userId }, { receiverUser: userId }] });
+    console.log(`Deleted ${giftDeleteResult.deletedCount} sent gift records`);
 
     // Unreserve all items reserved by this user
-    await Item.updateMany(
+    const unreserveResult = await Item.updateMany(
       { reservedBy: userId },
       { $set: { reservedBy: null, status: 'available', reserverName: null, reservedAt: null } }
     );
+    console.log(`Unreserved ${unreserveResult.modifiedCount} items`);
 
     // Delete all messages sent/received by user
-    await Message.deleteMany({ $or: [{ sender: userId }, { receiver: userId }] });
+    const messageDeleteResult = await Message.deleteMany({ $or: [{ sender: userId }, { receiver: userId }] });
+    console.log(`Deleted ${messageDeleteResult.deletedCount} messages`);
 
     // Delete all notifications for user
-    await Notification.deleteMany({ user: userId });
+    const notificationDeleteResult = await Notification.deleteMany({ user: userId });
+    console.log(`Deleted ${notificationDeleteResult.deletedCount} notifications`);
+
+    // FINALLY Delete user account
+    const userDeleteResult = await User.findByIdAndDelete(userId);
+    if (!userDeleteResult) {
+      console.warn(`User ${userId} not found during final deletion step`);
+    } else {
+      console.log(`User account ${userId} deleted successfully`);
+    }
 
     res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
+    console.error(`Error during account deletion for user ${req.userId}:`, error);
     res.status(500).json({ message: 'Error deleting user', error: error.message });
   }
 };
